@@ -27,6 +27,13 @@ import { fetchBookCustomValues, fetchBooks } from '@/lib/bookService';
 import { fetchStudents, fetchClasses } from '@/lib/studentService';
 import { fetchAcademicYears, createAcademicYear, setActiveAcademicYear, deleteAcademicYear } from '@/lib/issueService';
 import { createDocument, createdAt, deleteDocument, listDocuments, updateDocument } from '@/lib/firestoreData';
+import {
+  eraseAllBooks,
+  eraseAllStudents,
+  getEraseManifest,
+  type EraseManifest,
+  type EraseTarget,
+} from '@/lib/dataManagementService';
 import type { AppSettings, BookFieldDefinition, AcademicYear } from '@/types';
 import { toast } from 'sonner';
 
@@ -647,6 +654,59 @@ function FieldForm({
 }
 
 function DataManagement({ settings, fieldDefinitions }: { settings: AppSettings | null; fieldDefinitions: BookFieldDefinition[] }) {
+  const [eraseTarget, setEraseTarget] = useState<EraseTarget | null>(null);
+  const [eraseStep, setEraseStep] = useState<1 | 2>(1);
+  const [eraseManifest, setEraseManifest] = useState<EraseManifest | null>(null);
+  const [loadingManifest, setLoadingManifest] = useState(false);
+  const [confirmationText, setConfirmationText] = useState('');
+  const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const [erasing, setErasing] = useState(false);
+
+  const closeEraseDialog = () => {
+    if (erasing) return;
+    setEraseTarget(null);
+    setEraseStep(1);
+    setEraseManifest(null);
+    setConfirmationText('');
+    setBackupConfirmed(false);
+  };
+
+  const openEraseDialog = async (target: EraseTarget) => {
+    setEraseTarget(target);
+    setEraseStep(1);
+    setLoadingManifest(true);
+    setConfirmationText('');
+    setBackupConfirmed(false);
+    try {
+      setEraseManifest(await getEraseManifest());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to inspect the data selected for deletion.');
+      setEraseTarget(null);
+    } finally {
+      setLoadingManifest(false);
+    }
+  };
+
+  const requiredPhrase = eraseTarget === 'books' ? 'ERASE ALL BOOKS' : 'ERASE ALL STUDENTS';
+
+  const handleErase = async () => {
+    if (!eraseTarget || confirmationText !== requiredPhrase || !backupConfirmed) return;
+    setErasing(true);
+    try {
+      let deleted = 0;
+      if (eraseTarget === 'books') deleted = (await eraseAllBooks()).books;
+      else deleted = (await eraseAllStudents()).students;
+      toast.success(`${deleted} ${eraseTarget} permanently erased from this library only.`);
+      setEraseTarget(null);
+      setEraseManifest(null);
+      setEraseStep(1);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The data could not be erased.');
+    } finally {
+      setErasing(false);
+    }
+  };
+
   const handleExportBooks = async (format: 'xlsx' | 'csv') => {
     const { data: books } = await fetchBooks();
     const cvMap = await fetchBookCustomValues(books.map((b) => b.id));
@@ -714,6 +774,9 @@ function DataManagement({ settings, fieldDefinitions }: { settings: AppSettings 
           <Button variant="outline" onClick={() => handleExportBooks('csv')}>
             <Download size={16} /> Export Books (CSV)
           </Button>
+          <Button variant="danger" onClick={() => openEraseDialog('books')}>
+            <Trash2 size={16} /> Erase All Books
+          </Button>
         </div>
       </Card>
 
@@ -729,6 +792,9 @@ function DataManagement({ settings, fieldDefinitions }: { settings: AppSettings 
           <Button variant="outline" onClick={() => handleExportStudents('csv')}>
             <Download size={16} /> Export Students (CSV)
           </Button>
+          <Button variant="danger" onClick={() => openEraseDialog('students')}>
+            <Trash2 size={16} /> Erase All Students
+          </Button>
         </div>
       </Card>
 
@@ -741,6 +807,93 @@ function DataManagement({ settings, fieldDefinitions }: { settings: AppSettings 
           <Download size={16} /> Download Full Backup
         </Button>
       </Card>
+
+      {eraseTarget && (
+        <Modal
+          open={true}
+          onClose={closeEraseDialog}
+          title={eraseStep === 1 ? `Confirm erasing all ${eraseTarget}` : 'Final permanent-deletion confirmation'}
+          size="md"
+          footer={
+            <>
+              <Button variant="outline" onClick={closeEraseDialog} disabled={erasing}>Cancel</Button>
+              {eraseStep === 1 ? (
+                <Button
+                  variant="danger"
+                  disabled={loadingManifest || (eraseTarget === 'books' && (eraseManifest?.activeIssues ?? 0) > 0)}
+                  onClick={() => setEraseStep(2)}
+                >
+                  Continue to Final Confirmation
+                </Button>
+              ) : (
+                <Button
+                  variant="danger"
+                  disabled={erasing || !backupConfirmed || confirmationText !== requiredPhrase}
+                  onClick={handleErase}
+                >
+                  {erasing ? 'Erasing and syncing...' : requiredPhrase}
+                </Button>
+              )}
+            </>
+          }
+        >
+          {loadingManifest || !eraseManifest ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-red-600" />
+            </div>
+          ) : eraseStep === 1 ? (
+            <div className="space-y-4 text-sm text-slate-600">
+              <p>
+                This operation is restricted to the current signed-in library namespace. Data belonging to
+                other applications or users in the shared Firebase project cannot be accessed or deleted.
+              </p>
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+                {eraseTarget === 'books' ? (
+                  <ul className="space-y-1">
+                    <li>{eraseManifest.books} book records</li>
+                    <li>{eraseManifest.customValues} custom book values</li>
+                    <li>{eraseManifest.categories} saved book categories</li>
+                    <li>Issue-history snapshots will be preserved.</li>
+                  </ul>
+                ) : (
+                  <ul className="space-y-1">
+                    <li>{eraseManifest.students} student records</li>
+                    <li>Classes and issue-history snapshots will be preserved.</li>
+                  </ul>
+                )}
+              </div>
+              {eraseTarget === 'books' && eraseManifest.activeIssues > 0 && (
+                <p className="font-medium text-red-700">
+                  {eraseManifest.activeIssues} books are currently issued. Return them before erasing the catalogue.
+                </p>
+              )}
+              <p className="font-medium">This is confirmation 1 of 2. The deletion cannot be undone.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Confirmation 2 of 2: type <strong>{requiredPhrase}</strong> exactly.
+              </p>
+              <Input
+                label="Confirmation phrase"
+                value={confirmationText}
+                onChange={(event) => setConfirmationText(event.target.value)}
+                placeholder={requiredPhrase}
+                autoComplete="off"
+              />
+              <label className="flex items-start gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={backupConfirmed}
+                  onChange={(event) => setBackupConfirmed(event.target.checked)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>I confirm that I downloaded a backup or accept permanent loss of this data.</span>
+              </label>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

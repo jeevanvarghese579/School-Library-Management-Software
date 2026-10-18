@@ -28,6 +28,7 @@ import {
 import type { Book, BookCustomValue, BookIssue, Student, Class } from '@/types';
 import { todayString, toDateString, addDays } from '@/lib/utils';
 import { parseISO, format } from 'date-fns';
+import { trackCloudOperation } from './cloudSync';
 
 export const DEFAULT_FIELD_MAP: Record<string, keyof Book> = {
   'Book Number': 'book_number', 'Name of Book': 'name', 'Author Name': 'author',
@@ -167,7 +168,7 @@ export async function fetchBookCustomValues(bookIds: string[]): Promise<Map<stri
 async function saveCategory(category: string | null | undefined) {
   const key = normalizeBookText(category);
   if (!key || !category) return;
-  await writeBatch(db).set(documentRef('book_categories', encodeURIComponent(key)), { name: category.trim() }, { merge: true }).commit();
+  await trackCloudOperation(writeBatch(db).set(documentRef('book_categories', encodeURIComponent(key)), { name: category.trim() }, { merge: true }).commit());
 }
 
 export async function createBook(bookData: Partial<Book>, customFields: { fieldId: string; value: string }[]) {
@@ -181,7 +182,7 @@ export async function createBook(bookData: Partial<Book>, customFields: { fieldI
         book_id: bookId, field_definition_id: field.fieldId, value: field.value, created_at: createdAt(),
       });
     });
-    await batch.commit();
+    await trackCloudOperation(batch.commit());
     await saveCategory(prepared.category as string | null);
     return { error: null, id: bookId };
   } catch (error) { return { error: errorMessage(error), id: null }; }
@@ -196,7 +197,7 @@ export async function updateBook(id: string, bookData: Partial<Book>, customFiel
     customFields.forEach((field) => batch.set(documentRef('book_custom_values', `${id}_${field.fieldId}`), {
       book_id: id, field_definition_id: field.fieldId, value: field.value, created_at: createdAt(),
     }, { merge: true }));
-    await batch.commit();
+    await trackCloudOperation(batch.commit());
     await saveCategory(prepared.category as string | null);
     return { error: null };
   } catch (error) { return { error: errorMessage(error) }; }
@@ -225,11 +226,12 @@ export async function checkBookHasActiveIssue(bookId: string) {
   return (await getDoc(documentRef('active_issues', bookId))).exists();
 }
 
-export async function issueBook(params: { bookId: string; studentId: string; academicYearId: string | null; issueDate?: string; borrowingPeriodDays: number }) {
+export async function issueBook(params: { bookId: string; studentId: string; academicYearId: string | null; issueDate?: string; dueDate?: string; borrowingPeriodDays: number }) {
   const issueDate = params.issueDate ?? todayString();
-  const dueDate = toDateString(addDays(parseISO(issueDate), params.borrowingPeriodDays));
+  const dueDate = params.dueDate ?? toDateString(addDays(parseISO(issueDate), params.borrowingPeriodDays));
+  let createdIssueId: string | null = null;
   try {
-    await runTransaction(db, async (transaction) => {
+    await trackCloudOperation(runTransaction(db, async (transaction) => {
       const lockRef = documentRef('active_issues', params.bookId);
       const bookRef = documentRef('books', params.bookId);
       const studentRef = documentRef('students', params.studentId);
@@ -246,6 +248,7 @@ export async function issueBook(params: { bookId: string; studentId: string; aca
         if (classSnapshot.exists()) className = (classSnapshot.data() as Class).name;
       }
       const issueRef = doc(collectionRef('book_issues'));
+      createdIssueId = issueRef.id;
       const book = bookSnapshot.data() as Book;
       transaction.set(issueRef, {
         book_id: params.bookId, student_id: params.studentId, academic_year_id: params.academicYearId,
@@ -256,14 +259,14 @@ export async function issueBook(params: { bookId: string; studentId: string; aca
       });
       transaction.set(lockRef, { issue_id: issueRef.id, book_id: params.bookId, created_at: createdAt() });
       transaction.update(bookRef, { is_available: false });
-    });
-    return { error: null };
-  } catch (error) { return { error: errorMessage(error) }; }
+    }));
+    return { error: null, id: createdIssueId };
+  } catch (error) { return { error: errorMessage(error), id: null }; }
 }
 
 export async function returnBook(issueId: string, returnDate = todayString()) {
   try {
-    await runTransaction(db, async (transaction) => {
+    await trackCloudOperation(runTransaction(db, async (transaction) => {
       const issueRef = documentRef('book_issues', issueId);
       const snapshot = await transaction.get(issueRef);
       if (!snapshot.exists()) throw new Error('Issue record not found.');
@@ -273,7 +276,7 @@ export async function returnBook(issueId: string, returnDate = todayString()) {
       transaction.update(issueRef, { return_date: returnDate, status: 'returned' });
       transaction.delete(documentRef('active_issues', issue.book_id));
       transaction.update(documentRef('books', issue.book_id), { is_available: true });
-    });
+    }));
     return { error: null };
   } catch (error) { return { error: errorMessage(error) }; }
 }

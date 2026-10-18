@@ -2,6 +2,7 @@ import { getDocs, limit, query, where, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
 import { collectionRef, createDocument, createdAt, deleteDocument, documentRef, listDocuments } from './firestoreData';
 import type { BookIssue, AcademicYear } from '@/types';
+import { trackCloudOperation } from './cloudSync';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Unexpected database error.';
 
@@ -57,7 +58,7 @@ export async function setActiveAcademicYear(id: string) {
   try {
     const batch = writeBatch(db);
     (await fetchAcademicYears()).forEach((year) => batch.update(documentRef('academic_years', year.id), { is_active: year.id === id }));
-    await batch.commit();
+    await trackCloudOperation(batch.commit());
     return { error: null };
   } catch (error) { return { error: message(error) }; }
 }

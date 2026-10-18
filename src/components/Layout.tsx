@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -13,10 +13,13 @@ import {
   LogOut,
   Menu,
   X,
+  Cloud,
+  CloudUpload,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { cn } from '@/lib/utils';
+import { subscribeToCloudSync, waitForCloudSync } from '@/lib/cloudSync';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -35,8 +38,22 @@ export function Layout() {
   const { settings, activeYear } = useSettings();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingCloudWrites, setPendingCloudWrites] = useState(0);
+
+  useEffect(() => subscribeToCloudSync(setPendingCloudWrites), []);
+
+  useEffect(() => {
+    if (pendingCloudWrites === 0) return;
+    const preventUnsyncedExit = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', preventUnsyncedExit);
+    return () => window.removeEventListener('beforeunload', preventUnsyncedExit);
+  }, [pendingCloudWrites]);
 
   const handleSignOut = async () => {
+    await waitForCloudSync();
     await signOut();
     navigate('/login');
   };
@@ -93,6 +110,12 @@ export function Layout() {
         </nav>
 
         <div className="border-t border-slate-200 px-4 py-3 space-y-2">
+          <div className={`flex items-center gap-2 text-xs ${pendingCloudWrites > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+            {pendingCloudWrites > 0 ? <CloudUpload size={14} className="animate-pulse" /> : <Cloud size={14} />}
+            {pendingCloudWrites > 0
+              ? `Saving ${pendingCloudWrites} change${pendingCloudWrites === 1 ? '' : 's'} to cloud...`
+              : 'All changes saved to cloud'}
+          </div>
           {activeYear && (
             <div className="text-xs text-slate-500">
               Academic Year: <span className="font-semibold text-slate-700">{activeYear.year_label}</span>

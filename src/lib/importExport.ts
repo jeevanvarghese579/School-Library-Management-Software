@@ -5,6 +5,7 @@ import { DEFAULT_FIELD_MAP, fetchBooks, normalizeBookText, prepareBookStorageDat
 import { createStudent, fetchStudents, updateStudent } from './studentService';
 import { db } from './firebase';
 import { collectionRef, createdAt, documentRef } from './firestoreData';
+import { trackCloudOperation } from './cloudSync';
 
 export function exportToExcel(rows: Record<string, unknown>[], filename: string, sheetName = 'Sheet1') {
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -133,7 +134,7 @@ export async function importBooks(
     if (operationCount === 0) return;
     const rowsInBatch = pendingRows;
     try {
-      await batch.commit();
+      await trackCloudOperation(batch.commit());
       success += rowsInBatch.length;
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Batch write failed';
@@ -242,7 +243,7 @@ export async function importBooks(
       categoryBatch.set(documentRef('book_categories', encodeURIComponent(key)), { name }, { merge: true });
     });
     try {
-      await categoryBatch.commit();
+      await trackCloudOperation(categoryBatch.commit());
     } catch (error) {
       errors.push(`Categories: ${error instanceof Error ? error.message : 'Could not update the category list.'}`);
     }

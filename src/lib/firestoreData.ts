@@ -11,6 +11,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { auth, db, APP_KEY } from './firebase';
+import { trackCloudOperation } from './cloudSync';
 
 export function currentUid(): string {
   const uid = auth.currentUser?.uid;
@@ -42,18 +43,18 @@ export async function getDocument<T>(name: string, id: string): Promise<T | null
 
 export async function createDocument(name: string, data: DocumentData, id?: string): Promise<string> {
   if (id) {
-    await setDoc(documentRef(name, id), data);
+    await trackCloudOperation(setDoc(documentRef(name, id), data));
     return id;
   }
-  return (await addDoc(collectionRef(name), data)).id;
+  return (await trackCloudOperation(addDoc(collectionRef(name), data))).id;
 }
 
 export async function updateDocument(name: string, id: string, data: DocumentData) {
-  await updateDoc(documentRef(name, id), data);
+  await trackCloudOperation(updateDoc(documentRef(name, id), data));
 }
 
 export async function deleteDocument(name: string, id: string) {
-  await deleteDoc(documentRef(name, id));
+  await trackCloudOperation(deleteDoc(documentRef(name, id)));
 }
 
 export const createdAt = () => new Date().toISOString();
@@ -98,5 +99,5 @@ export async function ensureUserDefaults() {
       changed = true;
     }
   });
-  if (changed) await batch.commit();
+  if (changed) await trackCloudOperation(batch.commit());
 }

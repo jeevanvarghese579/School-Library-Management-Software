@@ -28,6 +28,7 @@ export function IssueReturnPage() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
   const [issueDate, setIssueDate] = useState(todayString());
   const [dueDate, setDueDate] = useState('');
   const [issuing, setIssuing] = useState(false);
@@ -78,6 +79,15 @@ export function IssueReturnPage() {
     return students.filter((s) => s.class_id === selectedClass);
   }, [students, selectedClass]);
 
+  const filteredStudents = useMemo(() => {
+    const query = studentSearch.trim().toLocaleLowerCase();
+    if (!query) return classStudents;
+    return classStudents.filter((student) => (
+      student.name.toLocaleLowerCase().includes(query)
+      || student.roll_number.toLocaleLowerCase().includes(query)
+    ));
+  }, [classStudents, studentSearch]);
+
   const handleIssue = async () => {
     if (!selectedBook) {
       toast.error('Please select a book');
@@ -104,6 +114,7 @@ export function IssueReturnPage() {
       setBookSearch('');
       setSelectedClass('');
       setSelectedStudent('');
+      setStudentSearch('');
       setIssueDate(todayString());
       loadData();
     }
@@ -202,6 +213,7 @@ export function IssueReturnPage() {
               onChange={(e) => {
                 setSelectedClass(e.target.value);
                 setSelectedStudent('');
+                setStudentSearch('');
               }}
             >
               <option value="">All Classes</option>
@@ -209,19 +221,30 @@ export function IssueReturnPage() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </Select>
-            <Select
-              label="Student"
-              value={selectedStudent}
-              onChange={(e) => setSelectedStudent(e.target.value)}
-            >
-              <option value="">— Select Student —</option>
-              {classStudents.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.roll_number})
-                  {s.class ? ` — ${s.class.name}` : ''}
-                </option>
-              ))}
-            </Select>
+            <div>
+              <Input
+                label="Student"
+                placeholder="Search by student name or roll number..."
+                value={studentSearch}
+                onChange={(event) => setStudentSearch(event.target.value)}
+              />
+              <Select
+                className="mt-2"
+                value={selectedStudent}
+                onChange={(event) => setSelectedStudent(event.target.value)}
+              >
+                <option value="">— Select Student —</option>
+                {filteredStudents.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {student.name} ({student.roll_number})
+                    {student.class ? ` — ${student.class.name}` : ''}
+                  </option>
+                ))}
+              </Select>
+              {studentSearch && filteredStudents.length === 0 && (
+                <p className="mt-1 text-xs text-slate-500">No students match this name or roll number.</p>
+              )}
+            </div>
           </div>
 
           {/* Dates */}

@@ -1,5 +1,5 @@
+import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { format, parseISO, isValid } from 'date-fns';
 import type { BookIssue, AppSettings, AcademicYear } from '@/types';
 
@@ -13,14 +13,204 @@ interface PdfParams {
   orientation?: 'portrait' | 'landscape';
 }
 
-function fmtDate(date: string | null, fmt = 'dd/MM/yyyy'): string {
-  if (!date) return '—';
-  const d = parseISO(date);
-  if (!isValid(d)) return '—';
-  return format(d, fmt);
+interface ReportPage {
+  className: string;
+  issues: BookIssue[];
+  continued: boolean;
+  startingIndex: number;
 }
 
-export function generateIssuePdf({
+function fmtDate(date: string | null, fmt = 'dd/MM/yyyy'): string {
+  if (!date) return '-';
+  const parsed = parseISO(date);
+  return isValid(parsed) ? format(parsed, fmt) : '-';
+}
+
+function createElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  styles: Partial<CSSStyleDeclaration> = {},
+  text?: string,
+) {
+  const element = document.createElement(tag);
+  Object.assign(element.style, styles);
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function buildReportPages(groups: Map<string, BookIssue[]>, rowsPerPage: number): ReportPage[] {
+  const pages: ReportPage[] = [];
+  [...groups.keys()].sort((a, b) => a.localeCompare(b)).forEach((className) => {
+    const issues = groups.get(className) ?? [];
+    for (let offset = 0; offset < issues.length; offset += rowsPerPage) {
+      pages.push({
+        className,
+        issues: issues.slice(offset, offset + rowsPerPage),
+        continued: offset > 0,
+        startingIndex: offset,
+      });
+    }
+  });
+  return pages;
+}
+
+function makeReportPage({
+  width,
+  height,
+  reportPage,
+  pageNumber,
+  pageCount,
+  settings,
+  academicYear,
+  className,
+  dateFrom,
+  dateTo,
+  generatedAt,
+}: {
+  width: number;
+  height: number;
+  reportPage: ReportPage;
+  pageNumber: number;
+  pageCount: number;
+  settings: AppSettings;
+  academicYear: AcademicYear | null;
+  className?: string | null;
+  dateFrom?: string;
+  dateTo?: string;
+  generatedAt: Date;
+}) {
+  const root = createElement('div', {
+    width: `${width}px`,
+    height: `${height}px`,
+    boxSizing: 'border-box',
+    padding: '34px 48px 40px',
+    position: 'relative',
+    backgroundColor: '#ffffff',
+    color: '#111827',
+    fontFamily: 'Arial, "Noto Sans Malayalam", "Nirmala UI", sans-serif',
+  });
+
+  root.append(createElement('div', {
+    position: 'absolute',
+    right: '28px',
+    top: '18px',
+    color: '#6b7280',
+    fontSize: '8px',
+  }, `Generated ${format(generatedAt, 'dd/MM/yyyy HH:mm')}`));
+
+  root.append(createElement('h1', {
+    margin: '0',
+    textAlign: 'center',
+    fontSize: '24px',
+    lineHeight: '1.2',
+    fontWeight: '700',
+  }, settings.school_name));
+
+  root.append(createElement('h2', {
+    margin: '8px 0 0',
+    textAlign: 'center',
+    fontSize: '18px',
+    lineHeight: '1.2',
+    fontWeight: '700',
+  }, 'Book Issue and Return Register'));
+
+  const metadata = createElement('div', {
+    marginTop: '12px',
+    textAlign: 'center',
+    color: '#374151',
+    fontSize: '11px',
+    lineHeight: '1.6',
+  });
+  if (academicYear) metadata.append(createElement('div', {}, `Academic Year: ${academicYear.year_label}`));
+  if (className && className !== 'all') metadata.append(createElement('div', {}, `Class: ${className}`));
+  metadata.append(createElement(
+    'div',
+    {},
+    `Period: ${dateFrom ? fmtDate(dateFrom) : 'Beginning'} - ${dateTo ? fmtDate(dateTo) : 'Now'}`,
+  ));
+  root.append(metadata);
+
+  root.append(createElement('h3', {
+    margin: '14px 0 8px',
+    fontSize: '16px',
+    lineHeight: '1.2',
+    fontWeight: '700',
+  }, `CLASS ${reportPage.className.toUpperCase()}${reportPage.continued ? ' (continued)' : ''}`));
+
+  const table = createElement('table', {
+    width: '100%',
+    borderCollapse: 'collapse',
+    tableLayout: 'fixed',
+    fontSize: '10px',
+  });
+  const columnWidths = ['8%', '18%', '22%', '25%', '14%', '13%'];
+  const headers = ['S.No.', 'Serial Number of Book', 'Name of Book', 'Issued To', 'Date of Issue', 'Date of Return'];
+  const headerRow = document.createElement('tr');
+  headers.forEach((header, index) => {
+    const cell = createElement('th', {
+      width: columnWidths[index],
+      boxSizing: 'border-box',
+      padding: '8px 7px',
+      border: '1px solid #d1d5db',
+      backgroundColor: '#2563eb',
+      color: '#ffffff',
+      textAlign: 'left',
+      fontSize: '10px',
+      lineHeight: '1.25',
+      fontWeight: '700',
+    }, header);
+    headerRow.append(cell);
+  });
+  const tableHead = document.createElement('thead');
+  tableHead.append(headerRow);
+  table.append(tableHead);
+
+  const tableBody = document.createElement('tbody');
+  reportPage.issues.forEach((issue, rowIndex) => {
+    const row = document.createElement('tr');
+    const values = [
+      String(reportPage.startingIndex + rowIndex + 1),
+      issue.book_number_snapshot,
+      issue.book_title_snapshot,
+      `${issue.student_name_snapshot} (${issue.student_roll_number_snapshot})`,
+      fmtDate(issue.issue_date),
+      issue.status === 'returned' ? fmtDate(issue.return_date) : '-',
+    ];
+    values.forEach((value) => {
+      row.append(createElement('td', {
+        boxSizing: 'border-box',
+        padding: '7px',
+        border: '1px solid #d1d5db',
+        color: '#374151',
+        textAlign: 'left',
+        lineHeight: '1.35',
+        overflowWrap: 'anywhere',
+        verticalAlign: 'middle',
+      }, value));
+    });
+    tableBody.append(row);
+  });
+  table.append(tableBody);
+  root.append(table);
+
+  root.append(createElement('div', {
+    position: 'absolute',
+    left: '48px',
+    bottom: '18px',
+    color: '#6b7280',
+    fontSize: '8px',
+  }, 'Developed by Jeevan Varghese'));
+  root.append(createElement('div', {
+    position: 'absolute',
+    right: '48px',
+    bottom: '18px',
+    color: '#6b7280',
+    fontSize: '8px',
+  }, `Page ${pageNumber} of ${pageCount}`));
+
+  return root;
+}
+
+export async function generateIssuePdf({
   issues,
   settings,
   academicYear,
@@ -29,134 +219,63 @@ export function generateIssuePdf({
   dateTo,
   orientation = 'portrait',
 }: PdfParams) {
-  const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 14;
-
-  // Filter by date range
   let filtered = issues;
-  if (dateFrom) {
-    filtered = filtered.filter((i) => i.issue_date >= dateFrom);
-  }
-  if (dateTo) {
-    filtered = filtered.filter((i) => i.issue_date <= dateTo);
-  }
+  if (dateFrom) filtered = filtered.filter((issue) => issue.issue_date >= dateFrom);
+  if (dateTo) filtered = filtered.filter((issue) => issue.issue_date <= dateTo);
 
-  // Group by class_name_snapshot
   const classGroups = new Map<string, BookIssue[]>();
   filtered.forEach((issue) => {
-    const cls = issue.class_name_snapshot || 'Unassigned';
-    const arr = classGroups.get(cls) ?? [];
-    arr.push(issue);
-    classGroups.set(cls, arr);
+    const group = issue.class_name_snapshot || 'Unassigned';
+    classGroups.set(group, [...(classGroups.get(group) ?? []), issue]);
   });
 
-  // Sort classes alphabetically
-  const sortedClasses = Array.from(classGroups.keys()).sort();
+  const reportPages = buildReportPages(classGroups, orientation === 'portrait' ? 23 : 12);
+  if (reportPages.length === 0) return;
 
-  // Header
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`${settings.school_name} — Book Issue and Return Register`, pageWidth / 2, 16, {
-    align: 'center',
+  const pixelWidth = orientation === 'portrait' ? 794 : 1123;
+  const pixelHeight = orientation === 'portrait' ? 1123 : 794;
+  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const generatedAt = new Date();
+  const stagingArea = createElement('div', {
+    position: 'fixed',
+    left: '-10000px',
+    top: '0',
+    width: `${pixelWidth}px`,
+    zIndex: '-1',
   });
+  document.body.append(stagingArea);
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  let headerY = 24;
-  if (academicYear) {
-    doc.text(`Academic Year: ${academicYear.year_label}`, pageWidth / 2, headerY, { align: 'center' });
-    headerY += 6;
-  }
-  if (className && className !== 'all') {
-    doc.text(`Class: ${className}`, pageWidth / 2, headerY, { align: 'center' });
-    headerY += 6;
-  }
-  const dateRangeStr = `${dateFrom ? fmtDate(dateFrom) : 'Beginning'} — ${dateTo ? fmtDate(dateTo) : 'Now'}`;
-  doc.text(`Period: ${dateRangeStr}`, pageWidth / 2, headerY, { align: 'center' });
-  headerY += 6;
-  doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, headerY, {
-    align: 'center',
-  });
-  headerY += 8;
-
-  if (filtered.length === 0) {
-    doc.setFontSize(12);
-    doc.text('No issue records found for the selected criteria.', pageWidth / 2, headerY + 10, {
-      align: 'center',
-    });
-    doc.save('library-issues-report.pdf');
-    return;
-  }
-
-  let firstSection = true;
-
-  sortedClasses.forEach((cls) => {
-    const classIssues = classGroups.get(cls)!;
-
-    // Class heading
-    if (!firstSection) {
-      doc.addPage();
+  try {
+    if (document.fonts?.ready) await document.fonts.ready;
+    for (let index = 0; index < reportPages.length; index++) {
+      const page = makeReportPage({
+        width: pixelWidth,
+        height: pixelHeight,
+        reportPage: reportPages[index],
+        pageNumber: index + 1,
+        pageCount: reportPages.length,
+        settings,
+        academicYear,
+        className,
+        dateFrom,
+        dateTo,
+        generatedAt,
+      });
+      stagingArea.replaceChildren(page);
+      const canvas = await html2canvas(page, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+        useCORS: true,
+      });
+      if (index > 0) pdf.addPage('a4', orientation);
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.96), 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
     }
-    firstSection = false;
+  } finally {
+    stagingArea.remove();
+  }
 
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`CLASS ${cls.toUpperCase()}`, margin, headerY);
-
-    // Table
-    autoTable(doc, {
-      startY: headerY + 4,
-      head: [['S.No.', 'Serial Number of Book', 'Name of Book', 'Issued To', 'Date of Issue', 'Date of Return']],
-      body: classIssues.map((issue, idx) => [
-        String(idx + 1),
-        issue.book_number_snapshot,
-        issue.book_title_snapshot,
-        `${issue.student_name_snapshot} (${issue.student_roll_number_snapshot})`,
-        fmtDate(issue.issue_date),
-        issue.status === 'returned' ? fmtDate(issue.return_date) : '—',
-      ]),
-      theme: 'grid',
-      headStyles: {
-        fillColor: [37, 99, 235],
-        textColor: 255,
-        fontSize: 9,
-        fontStyle: 'bold',
-      },
-      bodyStyles: {
-        fontSize: 8,
-        cellPadding: 2,
-      },
-      columnStyles: {
-        0: { cellWidth: 15 },
-        1: { cellWidth: 35 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 45 },
-        4: { cellWidth: 28 },
-        5: { cellWidth: 28 },
-      },
-      margin: { left: margin, right: margin },
-      didDrawPage: () => {
-        // Page number footer
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const pageCount = doc.getNumberOfPages();
-        const currentPage = doc.getCurrentPageInfo().pageNumber;
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.text(
-          `Page ${currentPage} of ${pageCount}`,
-          pageWidth - margin,
-          pageHeight - 8,
-          { align: 'right' }
-        );
-        doc.text(
-          'Developed by Jeevan Varghese',
-          margin,
-          pageHeight - 8,
-        );
-      },
-    });
-  });
-
-  doc.save(`library-issues-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  pdf.save(`library-issues-report-${format(generatedAt, 'yyyy-MM-dd')}.pdf`);
 }

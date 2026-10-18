@@ -22,6 +22,7 @@ export function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -57,21 +58,28 @@ export function ReportsPage() {
 
   const selectedYear = academicYears.find((y) => y.id === yearFilter) ?? activeYear;
 
-  const handleGeneratePdf = () => {
+  const handleGeneratePdf = async () => {
     if (filteredIssues.length === 0) {
       toast.error('No issues found for the selected criteria');
       return;
     }
-    generateIssuePdf({
-      issues: filteredIssues,
-      settings: settings!,
-      academicYear: selectedYear ?? null,
-      className: classFilter === 'all' ? undefined : classFilter,
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      orientation,
-    });
-    toast.success(`PDF generated with ${filteredIssues.length} records`);
+    setGeneratingPdf(true);
+    try {
+      await generateIssuePdf({
+        issues: filteredIssues,
+        settings: settings!,
+        academicYear: selectedYear ?? null,
+        className: classFilter === 'all' ? undefined : classFilter,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        orientation,
+      });
+      toast.success(`PDF generated with ${filteredIssues.length} records`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to generate the PDF report.');
+    } finally {
+      setGeneratingPdf(false);
+    }
   };
 
   const handlePrint = () => {
@@ -174,9 +182,9 @@ export function ReportsPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button onClick={handleGeneratePdf} size="lg">
+          <Button onClick={handleGeneratePdf} size="lg" disabled={generatingPdf}>
             <Download size={18} />
-            Print All Issues (PDF)
+            {generatingPdf ? 'Generating PDF...' : 'Print All Issues (PDF)'}
           </Button>
           <Button variant="outline" onClick={handlePrint} size="lg">
             <Printer size={18} />

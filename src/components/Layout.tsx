@@ -13,7 +13,6 @@ import {
   LogOut,
   Menu,
   X,
-  Library,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -61,9 +60,7 @@ export function Layout() {
       >
         <div className="px-5 py-5 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white">
-              <Library size={22} />
-            </div>
+            <img src="/app-icon-192.png" alt="School Library app icon" className="h-10 w-10 rounded-xl" />
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-slate-800 truncate">
                 {settings?.school_name || 'School Library'}

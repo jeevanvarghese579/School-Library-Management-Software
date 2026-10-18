@@ -1,4 +1,4 @@
-import { Info, Library } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 
 export function AboutPage() {
@@ -11,9 +11,11 @@ export function AboutPage() {
 
       <Card className="p-8">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="inline-flex p-4 bg-blue-600 rounded-2xl text-white mb-6 shadow-lg shadow-blue-200">
-            <Library size={36} />
-          </div>
+          <img
+            src="/app-icon-192.png"
+            alt="School Library app icon"
+            className="mx-auto mb-6 h-20 w-20 rounded-[22px] shadow-lg shadow-blue-200"
+          />
           <h2 className="text-2xl font-bold text-slate-800">School Library Management System</h2>
           <p className="text-slate-500 mt-2">Version 1.0.0</p>
 

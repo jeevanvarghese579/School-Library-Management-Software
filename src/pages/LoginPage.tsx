@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Library, UserPlus, LogIn, ShieldCheck } from 'lucide-react';
+import { UserPlus, LogIn, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -48,9 +48,11 @@ export function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex p-4 bg-blue-600 rounded-2xl text-white mb-4 shadow-lg shadow-blue-200">
-            <Library size={36} />
-          </div>
+          <img
+            src="/app-icon-192.png"
+            alt="School Library app icon"
+            className="mx-auto mb-4 h-20 w-20 rounded-[22px] shadow-lg shadow-blue-200"
+          />
           <h1 className="text-2xl font-bold text-slate-800">School Library Management</h1>
           <p className="text-slate-500 mt-1">Sign in to manage your library</p>
         </div>

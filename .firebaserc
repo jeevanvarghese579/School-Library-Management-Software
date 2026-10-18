@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "inter-level-progress-manager"
+  },
+  "targets": {
+    "inter-level-progress-manager": {
+      "hosting": {
+        "school-library-management-software": [
+          "school-library-management-software"
+        ]
+      }
+    }
+  }
+}

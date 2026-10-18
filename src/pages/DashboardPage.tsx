@@ -41,7 +41,13 @@ export function DashboardPage() {
       fetchActiveIssues(),
       fetchClasses(),
     ]);
-    setStats(s);
+    const issuedBooks = issueData.length;
+    setStats({
+      ...s,
+      issuedBooks,
+      availableBooks: Math.max(0, s.totalBooks - issuedBooks),
+      overdueBooks: issueData.filter((issue) => isOverdue(issue.due_date)).length,
+    });
     setIssues(issueData);
     setClasses(classData);
     setLoading(false);

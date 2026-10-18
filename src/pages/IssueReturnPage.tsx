@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input, Select } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useSettings } from '@/contexts/SettingsContext';
-import { fetchBooks, issueBook, returnBook, updateIssue } from '@/lib/bookService';
+import { issueBook, returnBook, searchAvailableBooks, updateIssue } from '@/lib/bookService';
 import { fetchStudents, fetchClasses } from '@/lib/studentService';
 import { fetchActiveIssues } from '@/lib/issueService';
 import { formatDate, isOverdue, isDueToday, daysOverdue, todayString, addDays, toDateString } from '@/lib/utils';
@@ -37,13 +37,11 @@ export function IssueReturnPage() {
 
   const loadData = async () => {
     setLoading(true);
-    const [{ data: bData }, { data: sData }, { data: cData }, { data: iData }] = await Promise.all([
-      fetchBooks(),
+    const [{ data: sData }, { data: cData }, { data: iData }] = await Promise.all([
       fetchStudents(),
       fetchClasses(),
       fetchActiveIssues(),
     ]);
-    setBooks(bData);
     setStudents(sData);
     setClasses(cData);
     setIssues(iData);
@@ -60,22 +58,20 @@ export function IssueReturnPage() {
     setDueDate(toDateString(addDays(parseISO(issueDate), days)));
   }, [issueDate, settings?.borrowing_period_days]);
 
-  const availableBooks = useMemo(() => {
-    return books.filter((b) => b.is_available);
-  }, [books]);
+  useEffect(() => {
+    if (selectedBook || !bookSearch.trim()) {
+      setBooks([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      searchAvailableBooks(bookSearch, 20)
+        .then(setBooks)
+        .catch(() => setBooks([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [bookSearch, selectedBook]);
 
-  const filteredBooks = useMemo(() => {
-    if (!bookSearch.trim()) return availableBooks.slice(0, 20);
-    const q = bookSearch.toLowerCase();
-    return availableBooks
-      .filter(
-        (b) =>
-          b.book_number.toLowerCase().includes(q) ||
-          b.name.toLowerCase().includes(q) ||
-          (b.author ?? '').toLowerCase().includes(q)
-      )
-      .slice(0, 20);
-  }, [availableBooks, bookSearch]);
+  const filteredBooks = books;
 
   const classStudents = useMemo(() => {
     if (!selectedClass) return students;

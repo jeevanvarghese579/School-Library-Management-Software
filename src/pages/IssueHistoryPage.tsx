@@ -8,9 +8,8 @@ import { Pagination } from '@/components/ui/Pagination';
 import { useSettings } from '@/contexts/SettingsContext';
 import { fetchAllIssues, fetchAcademicYears } from '@/lib/issueService';
 import { fetchClasses, fetchStudents } from '@/lib/studentService';
-import { fetchBooks } from '@/lib/bookService';
 import { formatDate } from '@/lib/utils';
-import type { BookIssue, Class, Student, Book, AcademicYear } from '@/types';
+import type { BookIssue, Class, Student, AcademicYear } from '@/types';
 
 const PAGE_SIZE = 20;
 
@@ -19,7 +18,6 @@ export function IssueHistoryPage() {
   const [issues, setIssues] = useState<BookIssue[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [books, setBooks] = useState<Book[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,16 +36,14 @@ export function IssueHistoryPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [{ data: iData }, { data: cData }, { data: sData }, { data: bData }] = await Promise.all([
+      const [{ data: iData }, { data: cData }, { data: sData }] = await Promise.all([
         fetchAllIssues(),
         fetchClasses(),
         fetchStudents(),
-        fetchBooks(),
       ]);
       setIssues(iData);
       setClasses(cData);
       setStudents(sData);
-      setBooks(bData);
       setAcademicYears(await fetchAcademicYears());
       setLoading(false);
     })();
@@ -96,6 +92,14 @@ export function IssueHistoryPage() {
 
   const totalPages = Math.ceil(filteredIssues.length / PAGE_SIZE);
   const paginatedIssues = filteredIssues.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const bookOptions = useMemo(() => {
+    const unique = new Map<string, { id: string; label: string }>();
+    issues.forEach((issue) => unique.set(issue.book_id, {
+      id: issue.book_id,
+      label: `${issue.book_number_snapshot} — ${issue.book_title_snapshot}`,
+    }));
+    return [...unique.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [issues]);
 
   if (loading) {
     return (
@@ -134,7 +138,7 @@ export function IssueHistoryPage() {
           </Select>
           <Select value={bookFilter} onChange={(e) => setBookFilter(e.target.value)}>
             <option value="all">All Books</option>
-            {books.map((b) => <option key={b.id} value={b.id}>{b.book_number} — {b.name}</option>)}
+            {bookOptions.map((book) => <option key={book.id} value={book.id}>{book.label}</option>)}
           </Select>
           <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All Statuses</option>

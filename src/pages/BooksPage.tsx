@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   BookOpen,
   Plus,
@@ -18,16 +18,20 @@ import { Modal } from '@/components/ui/Modal';
 import { Input, Select } from '@/components/ui/Input';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Pagination } from '@/components/ui/Pagination';
 import { CustomFieldRenderer } from '@/components/CustomFieldRenderer';
 import { useSettings } from '@/contexts/SettingsContext';
 import {
   fetchBooks,
+  fetchBooksPage,
+  fetchBookCategories,
   createBook,
   updateBook,
   archiveBook,
   checkBookNumberExists,
   checkBookHasActiveIssue,
   fetchBookCustomValues,
+  type BookPageCursor,
 } from '@/lib/bookService';
 import {
   exportToExcel,
@@ -35,6 +39,7 @@ import {
   parseSpreadsheet,
   downloadBookTemplate,
   prepareBookExportRows,
+  importBooks,
 } from '@/lib/importExport';
 import { formatCurrency } from '@/lib/utils';
 import type { Book, BookFieldDefinition } from '@/types';
@@ -45,6 +50,11 @@ type SortField = 'book_number' | 'name' | 'author' | 'category' | 'shelf_number'
 export function BooksPage() {
   const { settings, fieldDefinitions } = useSettings();
   const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [totalBooks, setTotalBooks] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState<(BookPageCursor | null)[]>([null]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortField, setSortField] = useState<SortField>('book_number');
@@ -58,45 +68,52 @@ export function BooksPage() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  const loadBooks = async () => {
-    const { data } = await fetchBooks();
-    setBooks(data);
-  };
+  const pageSize = 50;
+  const loadBooks = useCallback(async (page = 1, cursor: BookPageCursor | null = null) => {
+    setLoading(true);
+    try {
+      const result = await fetchBooksPage({
+        pageSize,
+        cursor,
+        search,
+        category: categoryFilter === 'all' ? '' : categoryFilter,
+        sortField,
+        sortAsc,
+      });
+      setBooks(result.data);
+      setTotalBooks(result.total);
+      setCurrentPage(page);
+      setPageCursors((previous) => {
+        const next = previous.slice(0, page + 1);
+        next[page] = result.nextCursor;
+        return next;
+      });
+      setSelected(new Set());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to load books.');
+    } finally {
+      setLoading(false);
+    }
+  }, [categoryFilter, search, sortAsc, sortField]);
 
   useEffect(() => {
-    loadBooks();
+    const timer = window.setTimeout(() => {
+      setPageCursors([null]);
+      loadBooks(1, null);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [loadBooks]);
+
+  useEffect(() => {
+    fetchBookCategories().then(setCategories).catch(() => undefined);
   }, []);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    books.forEach((b) => b.category && set.add(b.category));
-    return Array.from(set).sort();
-  }, [books]);
+  const filteredBooks = books;
 
-  const filteredBooks = useMemo(() => {
-    let result = books;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (b) =>
-          b.book_number.toLowerCase().includes(q) ||
-          b.name.toLowerCase().includes(q) ||
-          (b.author ?? '').toLowerCase().includes(q) ||
-          (b.category ?? '').toLowerCase().includes(q) ||
-          (b.shelf_number ?? '').toLowerCase().includes(q) ||
-          (b.row_number ?? '').toLowerCase().includes(q)
-      );
-    }
-    if (categoryFilter !== 'all') {
-      result = result.filter((b) => b.category === categoryFilter);
-    }
-    result = [...result].sort((a, b) => {
-      const av = String((a as unknown as Record<string, unknown>)[sortField] ?? '');
-      const bv = String((b as unknown as Record<string, unknown>)[sortField] ?? '');
-      return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-    return result;
-  }, [books, search, categoryFilter, sortField, sortAsc]);
+  const handlePageChange = (page: number) => {
+    const cursor = pageCursors[page - 1];
+    if (page === 1 || cursor) loadBooks(page, page === 1 ? null : cursor);
+  };
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -160,21 +177,26 @@ export function BooksPage() {
     loadBooks();
   };
 
-  const handleExport = (format: 'xlsx' | 'csv', scope: 'all' | 'filtered' | 'selected') => {
-    let data = books;
-    if (scope === 'filtered') data = filteredBooks;
+  const handleExport = async (format: 'xlsx' | 'csv', scope: 'all' | 'filtered' | 'selected') => {
+    const allBooks = scope === 'selected' ? books : (await fetchBooks()).data;
+    let data = allBooks;
+    if (scope === 'filtered') {
+      const query = search.trim().toLocaleLowerCase();
+      data = allBooks.filter((book) => (
+        (!query || [book.book_number, book.name, book.author, book.category, book.shelf_number, book.row_number]
+          .some((value) => String(value ?? '').toLocaleLowerCase().includes(query)))
+        && (categoryFilter === 'all' || book.category === categoryFilter)
+      ));
+    }
     if (scope === 'selected') data = books.filter((b) => selected.has(b.id));
 
-    // Fetch custom values
-    (async () => {
-      const cvMap = await fetchBookCustomValues(data.map((b) => b.id));
+    const cvMap = await fetchBookCustomValues(data.map((b) => b.id));
 
-      const rows = prepareBookExportRows(data, fieldDefinitions, cvMap, settings?.currency_symbol);
-      const filename = `books_export_${new Date().toISOString().split('T')[0]}.${format}`;
-      if (format === 'xlsx') exportToExcel(rows, filename, 'Books');
-      else exportToCSV(rows, filename);
-      toast.success(`Exported ${rows.length} books to ${format.toUpperCase()}`);
-    })();
+    const rows = prepareBookExportRows(data, fieldDefinitions, cvMap, settings?.currency_symbol);
+    const filename = `books_export_${new Date().toISOString().split('T')[0]}.${format}`;
+    if (format === 'xlsx') exportToExcel(rows, filename, 'Books');
+    else exportToCSV(rows, filename);
+    toast.success(`Exported ${rows.length} books to ${format.toUpperCase()}`);
   };
 
   return (
@@ -182,7 +204,7 @@ export function BooksPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Books</h1>
-          <p className="text-sm text-slate-500 mt-1">{books.length} books in inventory</p>
+          <p className="text-sm text-slate-500 mt-1">{totalBooks} books in inventory</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => setShowImport(true)}>
@@ -225,7 +247,11 @@ export function BooksPage() {
       </Card>
 
       <Card>
-        {filteredBooks.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          </div>
+        ) : filteredBooks.length === 0 ? (
           <EmptyState
             icon={<BookOpen size={40} />}
             title="No books found"
@@ -335,6 +361,13 @@ export function BooksPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.max(1, Math.ceil(totalBooks / pageSize))}
+              onPageChange={handlePageChange}
+              totalItems={totalBooks}
+              pageSize={pageSize}
+            />
           </>
         )}
       </Card>
@@ -669,37 +702,43 @@ function ImportModal({
   const [importMode, setImportMode] = useState<'skip' | 'update'>('skip');
   const [result, setResult] = useState<{ success: number; skipped: number; failed: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ completed: 0, total: 0 });
 
   const allFieldNames = fieldDefinitions.map((f) => f.field_name);
 
   const handleFile = async (f: File) => {
-    const data = await parseSpreadsheet(f);
-    setRawData(data);
-    setColumns(data.length > 0 ? Object.keys(data[0]) : []);
-    // Auto-map columns
-    const autoMap: Record<string, string> = {};
-    columns.forEach((col) => {
-      const match = allFieldNames.find((fn) => fn.toLowerCase() === col.toLowerCase());
-      if (match) autoMap[col] = match;
-    });
-    // Re-do automap with actual columns
-    const actualCols = data.length > 0 ? Object.keys(data[0]) : [];
-    actualCols.forEach((col) => {
-      const match = allFieldNames.find((fn) => fn.toLowerCase() === col.toLowerCase());
-      if (match) autoMap[col] = match;
-    });
-    setMapping(autoMap);
-    setStep('map');
+    try {
+      const data = await parseSpreadsheet(f);
+      if (data.length === 0) throw new Error('The spreadsheet contains no data rows.');
+      const actualCols = Object.keys(data[0]);
+      setRawData(data);
+      setColumns(actualCols);
+      const autoMap: Record<string, string> = {};
+      actualCols.forEach((col) => {
+        const match = allFieldNames.find((fieldName) => fieldName.toLowerCase() === col.toLowerCase());
+        if (match) autoMap[col] = match;
+      });
+      setMapping(autoMap);
+      setStep('map');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to read this spreadsheet.');
+    }
   };
 
   const handleImport = async () => {
     setImporting(true);
-    setStep('preview');
-    const { importBooks } = await import('@/lib/importExport');
-    const res = await importBooks(rawData, mapping, fieldDefinitions, importMode);
-    setResult(res);
-    setImporting(false);
-    setStep('result');
+    setImportProgress({ completed: 0, total: rawData.length });
+    try {
+      const res = await importBooks(rawData, mapping, fieldDefinitions, importMode, (completed, total) => {
+        setImportProgress({ completed, total });
+      });
+      setResult(res);
+      setStep('result');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The import could not be completed.');
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -716,7 +755,7 @@ function ImportModal({
           </>
         ) : step === 'preview' ? (
           <>
-            <Button variant="outline" onClick={() => setStep('map')}>Back</Button>
+            <Button variant="outline" onClick={() => setStep('map')} disabled={importing}>Back</Button>
             <Button onClick={handleImport} disabled={importing}>
               {importing ? 'Importing...' : 'Import Books'}
             </Button>
@@ -799,6 +838,20 @@ function ImportModal({
       {step === 'preview' && (
         <div className="space-y-4">
           <p className="text-sm text-slate-600">Preview of data to import ({rawData.length} rows):</p>
+          {importing && (
+            <div className="rounded-lg bg-blue-50 p-3">
+              <div className="mb-2 flex justify-between text-xs font-medium text-blue-700">
+                <span>Importing in secure batches</span>
+                <span>{importProgress.completed} / {importProgress.total}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-blue-100">
+                <div
+                  className="h-full bg-blue-600 transition-all"
+                  style={{ width: `${importProgress.total ? (importProgress.completed / importProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto max-h-[400px] border border-slate-200 rounded-lg">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-50">

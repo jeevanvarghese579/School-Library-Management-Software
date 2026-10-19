@@ -295,6 +295,34 @@ export async function updateIssue(issueId: string, updates: { issue_date?: strin
   } catch (error) { return { error: errorMessage(error) }; }
 }
 
+export async function deleteIssue(issueId: string) {
+  try {
+    await trackCloudOperation(runTransaction(db, async (transaction) => {
+      const issueRef = documentRef('book_issues', issueId);
+      const issueSnapshot = await transaction.get(issueRef);
+      if (!issueSnapshot.exists()) throw new Error('Issue record not found.');
+      const issue = issueSnapshot.data() as BookIssue;
+
+      if (issue.status === 'issued') {
+        const lockRef = documentRef('active_issues', issue.book_id);
+        const bookRef = documentRef('books', issue.book_id);
+        const [lockSnapshot, bookSnapshot] = await Promise.all([
+          transaction.get(lockRef),
+          transaction.get(bookRef),
+        ]);
+        if (lockSnapshot.exists() && lockSnapshot.data().issue_id !== issueId) {
+          throw new Error('This book is linked to another active issue. Return that issue before deleting this record.');
+        }
+        if (lockSnapshot.exists()) transaction.delete(lockRef);
+        if (bookSnapshot.exists()) transaction.update(bookRef, { is_available: true });
+      }
+
+      transaction.delete(issueRef);
+    }));
+    return { error: null };
+  } catch (error) { return { error: errorMessage(error) }; }
+}
+
 export async function fetchDashboardStats() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const [books, students, classes, returned, issuedToday] = await Promise.all([

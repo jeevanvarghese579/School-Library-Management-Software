@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
-import { ArrowLeftRight, BookUp, RotateCcw, Search, Pencil } from 'lucide-react';
+import { ArrowLeftRight, BookUp, RotateCcw, Search, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input, Select } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useSettings } from '@/contexts/SettingsContext';
-import { issueBook, returnBook, searchAvailableBooks, updateIssue } from '@/lib/bookService';
+import { deleteIssue, issueBook, returnBook, searchAvailableBooks, updateIssue } from '@/lib/bookService';
 import { fetchStudents, fetchClasses } from '@/lib/studentService';
 import { fetchActiveIssues } from '@/lib/issueService';
 import { formatDate, isOverdue, isDueToday, daysOverdue, todayString, addDays, toDateString } from '@/lib/utils';
@@ -179,6 +180,17 @@ export function IssueReturnPage() {
       setEditingIssue(null);
       loadData();
     }
+  };
+
+  const handleIssueDelete = async (issue: BookIssue) => {
+    const { error } = await deleteIssue(issue.id);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Issue record deleted');
+    setEditingIssue(null);
+    setIssues((previous) => previous.filter((item) => item.id !== issue.id));
   };
 
   if (loading) {
@@ -419,6 +431,7 @@ export function IssueReturnPage() {
           issue={editingIssue}
           onClose={() => setEditingIssue(null)}
           onSave={handleEditSave}
+          onDelete={handleIssueDelete}
         />
       )}
     </div>
@@ -429,60 +442,78 @@ function EditIssueModal({
   issue,
   onClose,
   onSave,
+  onDelete,
 }: {
   issue: BookIssue;
   onClose: () => void;
   onSave: (issueId: string, updates: { issue_date?: string; due_date?: string; return_date?: string | null }) => void;
+  onDelete: (issue: BookIssue) => void;
 }) {
   const [issueDate, setIssueDate] = useState(issue.issue_date);
   const [dueDate, setDueDate] = useState(issue.due_date);
   const [returnDate, setReturnDate] = useState(issue.return_date ?? '');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   return (
-    <Modal
-      open={true}
-      onClose={onClose}
-      title="Edit Issue Record"
-      size="md"
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(issue.id, {
-            issue_date: issueDate,
-            due_date: dueDate,
-            return_date: returnDate || null,
-          })}>
-            Save Changes
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="p-3 bg-slate-50 rounded-lg">
-          <p className="text-sm font-medium text-slate-700">{issue.book_title_snapshot}</p>
-          <p className="text-xs text-slate-500">
-            {issue.book_number_snapshot} · {issue.student_name_snapshot} ({issue.student_roll_number_snapshot})
-          </p>
+    <>
+      <Modal
+        open={true}
+        onClose={onClose}
+        title="Edit Issue Record"
+        size="md"
+        footer={
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 size={16} /> Delete Record
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={() => onSave(issue.id, {
+                issue_date: issueDate,
+                due_date: dueDate,
+                return_date: returnDate || null,
+              })}>
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-slate-50 rounded-lg">
+            <p className="text-sm font-medium text-slate-700">{issue.book_title_snapshot}</p>
+            <p className="text-xs text-slate-500">
+              {issue.book_number_snapshot} · {issue.student_name_snapshot} ({issue.student_roll_number_snapshot})
+            </p>
+          </div>
+          <Input
+            label="Issue Date"
+            type="date"
+            value={issueDate}
+            onChange={(e) => setIssueDate(e.target.value)}
+          />
+          <Input
+            label="Due Date"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+          <Input
+            label="Return Date"
+            type="date"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+          />
         </div>
-        <Input
-          label="Issue Date"
-          type="date"
-          value={issueDate}
-          onChange={(e) => setIssueDate(e.target.value)}
-        />
-        <Input
-          label="Due Date"
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-        />
-        <Input
-          label="Return Date"
-          type="date"
-          value={returnDate}
-          onChange={(e) => setReturnDate(e.target.value)}
-        />
-      </div>
-    </Modal>
+      </Modal>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Issue Record"
+        message={`Permanently delete the issue of "${issue.book_title_snapshot}" to ${issue.student_name_snapshot}? The book will become available again.`}
+        confirmLabel="Delete Record"
+        onConfirm={() => { setShowDeleteConfirm(false); onDelete(issue); }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </>
   );
 }

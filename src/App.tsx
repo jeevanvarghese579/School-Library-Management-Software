@@ -10,6 +10,7 @@ import { ClassesPage } from '@/pages/ClassesPage';
 import { IssueReturnPage } from '@/pages/IssueReturnPage';
 import { IssueHistoryPage } from '@/pages/IssueHistoryPage';
 import { ReportsPage } from '@/pages/ReportsPage';
+import { BorrowerRankingsPage } from '@/pages/BorrowerRankingsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AboutPage } from '@/pages/AboutPage';
 import { Toaster } from 'sonner';
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="/issue-return" element={<IssueReturnPage />} />
         <Route path="/history" element={<IssueHistoryPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/borrower-rankings" element={<BorrowerRankingsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/about" element={<AboutPage />} />
       </Route>

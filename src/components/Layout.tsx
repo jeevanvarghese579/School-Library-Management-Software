@@ -15,6 +15,7 @@ import {
   X,
   Cloud,
   CloudUpload,
+  Trophy,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -29,6 +30,7 @@ const navItems = [
   { to: '/classes', label: 'Classes', icon: GraduationCap },
   { to: '/history', label: 'Issue History', icon: History },
   { to: '/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/borrower-rankings', label: 'Borrower Rankings', icon: Trophy },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/about', label: 'About', icon: Info },
 ];

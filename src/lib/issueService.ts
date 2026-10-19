@@ -1,6 +1,6 @@
 import { getDocs, limit, query, where, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
-import { collectionRef, createDocument, createdAt, deleteDocument, documentRef, listDocuments } from './firestoreData';
+import { collectionRef, createDocument, createdAt, deleteDocument, documentRef, listDocuments, updateDocument } from './firestoreData';
 import type { BookIssue, AcademicYear } from '@/types';
 import { trackCloudOperation } from './cloudSync';
 
@@ -46,10 +46,30 @@ export async function fetchAcademicYears() {
   return (await listDocuments<AcademicYear>('academic_years')).sort((a, b) => a.year_label.localeCompare(b.year_label));
 }
 
-export async function createAcademicYear(label: string) {
+function validateAcademicYearDates(startDate: string, endDate: string) {
+  if (!startDate || !endDate) return 'Start date and end date are required.';
+  if (endDate < startDate) return 'Academic year end date cannot be before its start date.';
+  return null;
+}
+
+export async function createAcademicYear(label: string, startDate: string, endDate: string) {
   try {
+    const dateError = validateAcademicYearDates(startDate, endDate);
+    if (dateError) return { error: dateError };
     if ((await fetchAcademicYears()).some((year) => year.year_label === label.trim())) return { error: 'This academic year already exists.' };
-    await createDocument('academic_years', { year_label: label.trim(), is_active: false, created_at: createdAt() });
+    await createDocument('academic_years', {
+      year_label: label.trim(), start_date: startDate, end_date: endDate,
+      is_active: false, created_at: createdAt(),
+    });
+    return { error: null };
+  } catch (error) { return { error: message(error) }; }
+}
+
+export async function updateAcademicYearDates(id: string, startDate: string, endDate: string) {
+  try {
+    const dateError = validateAcademicYearDates(startDate, endDate);
+    if (dateError) return { error: dateError };
+    await updateDocument('academic_years', id, { start_date: startDate, end_date: endDate });
     return { error: null };
   } catch (error) { return { error: message(error) }; }
 }

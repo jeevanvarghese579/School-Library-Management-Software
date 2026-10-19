@@ -56,6 +56,8 @@ export interface BookCustomValue {
 export interface AcademicYear {
   id: string;
   year_label: string;
+  start_date?: string | null;
+  end_date?: string | null;
   is_active: boolean;
   created_at: string;
 }

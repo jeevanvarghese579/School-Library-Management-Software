@@ -7,6 +7,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { fetchAllIssues, fetchAcademicYears } from '@/lib/issueService';
 import { fetchClasses } from '@/lib/studentService';
 import { generateIssuePdf } from '@/lib/pdfGenerator';
+import { issuesForReport } from '@/lib/reportUtils';
 import type { BookIssue, Class, AcademicYear } from '@/types';
 import { toast } from 'sonner';
 
@@ -17,10 +18,8 @@ export function ReportsPage() {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [yearFilter, setYearFilter] = useState(activeYear?.id ?? 'all');
+  const [yearFilter, setYearFilter] = useState(activeYear?.id ?? '');
   const [classFilter, setClassFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
@@ -35,28 +34,16 @@ export function ReportsPage() {
       setIssues(iData);
       setClasses(cData);
       setAcademicYears(yData);
+      setYearFilter((current) => current || yData.find((year) => year.is_active)?.id || yData[0]?.id || '');
       setLoading(false);
     })();
   }, []);
 
-  const filteredIssues = useMemo(() => {
-    let result = issues;
-    if (yearFilter !== 'all') {
-      result = result.filter((i) => i.academic_year_id === yearFilter);
-    }
-    if (classFilter !== 'all') {
-      result = result.filter((i) => i.class_name_snapshot === classFilter);
-    }
-    if (dateFrom) {
-      result = result.filter((i) => i.issue_date >= dateFrom);
-    }
-    if (dateTo) {
-      result = result.filter((i) => i.issue_date <= dateTo);
-    }
-    return result;
-  }, [issues, yearFilter, classFilter, dateFrom, dateTo]);
-
-  const selectedYear = academicYears.find((y) => y.id === yearFilter) ?? activeYear;
+  const selectedYear = academicYears.find((y) => y.id === yearFilter) ?? null;
+  const filteredIssues = useMemo(
+    () => issuesForReport(issues, selectedYear, classFilter),
+    [issues, selectedYear, classFilter],
+  );
 
   const handleGeneratePdf = async () => {
     if (filteredIssues.length === 0) {
@@ -70,8 +57,6 @@ export function ReportsPage() {
         settings: settings!,
         academicYear: selectedYear ?? null,
         className: classFilter === 'all' ? undefined : classFilter,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
         orientation,
       });
       toast.success(`PDF generated with ${filteredIssues.length} records`);
@@ -118,13 +103,13 @@ export function ReportsPage() {
           Generates a class-wise PDF containing every book issue transaction (issued and returned).
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
           <Select
             label="Academic Year"
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
           >
-            <option value="all">All Years</option>
+            <option value="" disabled>Select academic year</option>
             {academicYears.map((y) => (
               <option key={y.id} value={y.id}>{y.year_label}</option>
             ))}
@@ -139,25 +124,13 @@ export function ReportsPage() {
               <option key={c.id} value={c.name}>{c.name}</option>
             ))}
           </Select>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Issue Date From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Issue Date To</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
         </div>
+
+        <p className="text-sm text-slate-500 mb-6">
+          {selectedYear?.start_date && selectedYear?.end_date
+            ? `Report period: ${selectedYear.start_date} to ${selectedYear.end_date}`
+            : 'Set this academic year’s start and end dates in Settings to define its exact report period.'}
+        </p>
 
         <div className="flex items-center gap-4 mb-6">
           <label className="block text-sm font-medium text-slate-700">Orientation:</label>

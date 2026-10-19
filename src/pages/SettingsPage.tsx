@@ -25,7 +25,13 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { exportToExcel, exportToCSV, downloadBookTemplate, downloadStudentTemplate, prepareBookExportRows } from '@/lib/importExport';
 import { fetchBookCustomValues, fetchBooks } from '@/lib/bookService';
 import { fetchStudents, fetchClasses } from '@/lib/studentService';
-import { fetchAcademicYears, createAcademicYear, setActiveAcademicYear, deleteAcademicYear } from '@/lib/issueService';
+import {
+  fetchAcademicYears,
+  createAcademicYear,
+  updateAcademicYearDates,
+  setActiveAcademicYear,
+  deleteAcademicYear,
+} from '@/lib/issueService';
 import { createDocument, createdAt, deleteDocument, listDocuments, updateDocument } from '@/lib/firestoreData';
 import {
   eraseAllBooks,
@@ -112,6 +118,8 @@ function GeneralSettings({
 
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [newYearLabel, setNewYearLabel] = useState('');
+  const [newYearStartDate, setNewYearStartDate] = useState('');
+  const [newYearEndDate, setNewYearEndDate] = useState('');
   const [showDeleteYearConfirm, setShowDeleteYearConfirm] = useState(false);
   const [deleteYearTarget, setDeleteYearTarget] = useState<AcademicYear | null>(null);
 
@@ -158,14 +166,35 @@ function GeneralSettings({
       toast.error('Academic year label is required');
       return;
     }
-    const { error } = await createAcademicYear(newYearLabel.trim());
+    if (!newYearStartDate || !newYearEndDate) {
+      toast.error('Select the academic year start and end dates');
+      return;
+    }
+    const { error } = await createAcademicYear(newYearLabel.trim(), newYearStartDate, newYearEndDate);
     if (error) {
       toast.error(error);
     } else {
       toast.success('Academic year created');
       setNewYearLabel('');
+      setNewYearStartDate('');
+      setNewYearEndDate('');
       setAcademicYears(await fetchAcademicYears());
     }
+  };
+
+  const handleYearDateChange = (id: string, field: 'start_date' | 'end_date', value: string) => {
+    setAcademicYears((years) => years.map((year) => year.id === id ? { ...year, [field]: value } : year));
+  };
+
+  const handleSaveYearDates = async (year: AcademicYear) => {
+    const { error } = await updateAcademicYearDates(year.id, year.start_date ?? '', year.end_date ?? '');
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success(`Dates saved for ${year.year_label}`);
+    setAcademicYears(await fetchAcademicYears());
+    await refreshActiveYear();
   };
 
   const handleSetActiveYear = async (id: string) => {
@@ -289,34 +318,56 @@ function GeneralSettings({
         </div>
         <div className="space-y-2">
           {academicYears.map((year) => (
-            <div key={year.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-slate-700">{year.year_label}</span>
-                {year.is_active && <Badge variant="success">Active</Badge>}
+            <div key={year.id} className="p-4 border border-slate-200 rounded-lg">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-slate-700">{year.year_label}</span>
+                  {year.is_active && <Badge variant="success">Active</Badge>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!year.is_active && (
+                    <Button variant="outline" size="sm" onClick={() => handleSetActiveYear(year.id)}>
+                      Set Active
+                    </Button>
+                  )}
+                  <button
+                    onClick={() => { setDeleteYearTarget(year); setShowDeleteYearConfirm(true); }}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    aria-label={`Delete ${year.year_label}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {!year.is_active && (
-                  <Button variant="outline" size="sm" onClick={() => handleSetActiveYear(year.id)}>
-                    Set Active
-                  </Button>
-                )}
-                <button
-                  onClick={() => { setDeleteYearTarget(year); setShowDeleteYearConfirm(true); }}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  <Trash2 size={16} />
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                <Input
+                  label="Start Date"
+                  type="date"
+                  value={year.start_date ?? ''}
+                  onChange={(event) => handleYearDateChange(year.id, 'start_date', event.target.value)}
+                />
+                <Input
+                  label="End Date"
+                  type="date"
+                  value={year.end_date ?? ''}
+                  onChange={(event) => handleYearDateChange(year.id, 'end_date', event.target.value)}
+                />
+                <Button variant="outline" onClick={() => handleSaveYearDates(year)}>
+                  <Save size={16} /> Save Dates
+                </Button>
               </div>
             </div>
           ))}
         </div>
-        <div className="flex gap-2 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_auto] gap-3 mt-4 items-end p-4 bg-slate-50 rounded-lg">
           <Input
+            label="Academic Year Label"
             placeholder="e.g., 2027–2028"
             value={newYearLabel}
             onChange={(e) => setNewYearLabel(e.target.value)}
-            className="flex-1"
           />
+          <Input label="Start Date" type="date" value={newYearStartDate} onChange={(e) => setNewYearStartDate(e.target.value)} />
+          <Input label="End Date" type="date" value={newYearEndDate} onChange={(e) => setNewYearEndDate(e.target.value)} />
           <Button onClick={handleCreateYear}>
             <Plus size={16} /> Add Year
           </Button>

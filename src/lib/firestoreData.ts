@@ -87,7 +87,10 @@ export async function ensureUserDefaults() {
     changed = true;
   }
   if (!snapshots[1].exists()) {
-    batch.set(yearRef, { year_label: '2026–2027', is_active: true, created_at: createdAt() });
+    batch.set(yearRef, {
+      year_label: '2026–2027', start_date: '2026-06-01', end_date: '2027-03-31',
+      is_active: true, created_at: createdAt(),
+    });
     changed = true;
   }
   defaultFields.forEach(([id, name, type, required], index) => {

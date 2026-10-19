@@ -8,8 +8,6 @@ interface PdfParams {
   settings: AppSettings;
   academicYear: AcademicYear | null;
   className?: string | null;
-  dateFrom?: string;
-  dateTo?: string;
   orientation?: 'portrait' | 'landscape';
 }
 
@@ -62,8 +60,6 @@ function makeReportPage({
   settings,
   academicYear,
   className,
-  dateFrom,
-  dateTo,
   generatedAt,
 }: {
   width: number;
@@ -74,8 +70,6 @@ function makeReportPage({
   settings: AppSettings;
   academicYear: AcademicYear | null;
   className?: string | null;
-  dateFrom?: string;
-  dateTo?: string;
   generatedAt: Date;
 }) {
   const root = createElement('div', {
@@ -125,7 +119,9 @@ function makeReportPage({
   metadata.append(createElement(
     'div',
     {},
-    `Period: ${dateFrom ? fmtDate(dateFrom) : 'Beginning'} - ${dateTo ? fmtDate(dateTo) : 'Now'}`,
+    academicYear?.start_date && academicYear?.end_date
+      ? `Period: ${fmtDate(academicYear.start_date)} - ${fmtDate(academicYear.end_date)}`
+      : 'Period: Dates not configured',
   ));
   root.append(metadata);
 
@@ -215,13 +211,9 @@ export async function generateIssuePdf({
   settings,
   academicYear,
   className,
-  dateFrom,
-  dateTo,
   orientation = 'portrait',
 }: PdfParams) {
-  let filtered = issues;
-  if (dateFrom) filtered = filtered.filter((issue) => issue.issue_date >= dateFrom);
-  if (dateTo) filtered = filtered.filter((issue) => issue.issue_date <= dateTo);
+  const filtered = issues;
 
   const classGroups = new Map<string, BookIssue[]>();
   filtered.forEach((issue) => {
@@ -259,8 +251,6 @@ export async function generateIssuePdf({
         settings,
         academicYear,
         className,
-        dateFrom,
-        dateTo,
         generatedAt,
       });
       stagingArea.replaceChildren(page);

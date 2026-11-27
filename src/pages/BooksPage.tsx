@@ -183,7 +183,7 @@ export function BooksPage() {
     if (scope === 'filtered') {
       const query = search.trim().toLocaleLowerCase();
       data = allBooks.filter((book) => (
-        (!query || [book.book_number, book.name, book.author, book.category, book.shelf_number, book.row_number]
+        (!query || [book.book_number, book.isbn, book.name, book.author, book.category, book.shelf_number, book.row_number]
           .some((value) => String(value ?? '').toLocaleLowerCase().includes(query)))
         && (categoryFilter === 'all' || book.category === categoryFilter)
       ));
@@ -294,6 +294,7 @@ export function BooksPage() {
                     <th className="px-4 py-3 font-medium cursor-pointer" onClick={() => toggleSort('book_number')}>
                       Book No. {sortField === 'book_number' && (sortAsc ? '↑' : '↓')}
                     </th>
+                    <th className="px-4 py-3 font-medium">ISBN</th>
                     <th className="px-4 py-3 font-medium cursor-pointer" onClick={() => toggleSort('name')}>
                       Name {sortField === 'name' && (sortAsc ? '↑' : '↓')}
                     </th>
@@ -319,6 +320,7 @@ export function BooksPage() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-slate-700 font-medium">{book.book_number}</td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{book.isbn || '—'}</td>
                       <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate">{book.name}</td>
                       <td className="px-4 py-3 text-slate-500">{book.author || '—'}</td>
                       <td className="px-4 py-3 text-slate-500">{book.category || '—'}</td>
@@ -436,6 +438,7 @@ function BookForm({
     if (book) {
       return {
         book_number: book.book_number,
+        isbn: book.isbn ?? '',
         name: book.name,
         author: book.author ?? '',
         category: book.category ?? '',
@@ -498,6 +501,7 @@ function BookForm({
     setSaving(true);
     const bookData: Partial<Book> = {
       book_number: defaultValues.book_number!.trim(),
+      isbn: defaultValues.isbn?.trim() || null,
       name: defaultValues.name!.trim(),
       author: defaultValues.author?.trim() || null,
       category: defaultValues.category?.trim() || null,
@@ -552,6 +556,11 @@ function BookForm({
               value={defaultValues.name ?? ''}
               onChange={(e) => handleDefaultChange('name', e.target.value)}
               error={errors.name}
+            />
+            <Input
+              label="ISBN"
+              value={defaultValues.isbn ?? ''}
+              onChange={(e) => handleDefaultChange('isbn', e.target.value)}
             />
             <Input
               label="Author Name"
@@ -635,6 +644,10 @@ function BookDetailModal({
           <div>
             <p className="text-xs text-slate-400">Name</p>
             <p className="text-sm font-medium text-slate-700">{book.name}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">ISBN</p>
+            <p className="text-sm font-medium text-slate-700">{book.isbn || '—'}</p>
           </div>
           <div>
             <p className="text-xs text-slate-400">Author</p>

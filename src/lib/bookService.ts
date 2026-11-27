@@ -31,7 +31,7 @@ import { parseISO, format } from 'date-fns';
 import { trackCloudOperation } from './cloudSync';
 
 export const DEFAULT_FIELD_MAP: Record<string, keyof Book> = {
-  'Book Number': 'book_number', 'Name of Book': 'name', 'Author Name': 'author',
+  'Book Number': 'book_number', ISBN: 'isbn', 'Name of Book': 'name', 'Author Name': 'author',
   Category: 'category', 'Shelf Number': 'shelf_number', 'Row Number': 'row_number',
   'Source of Acquisition': 'source_of_acquisition', Price: 'price',
 };
@@ -67,6 +67,7 @@ export function prepareBookStorageData(bookData: Partial<Book>) {
   const normalized: Partial<Book> & Record<string, unknown> = {
     ...bookData,
     book_number: String(bookData.book_number ?? '').trim(),
+    isbn: bookData.isbn ? String(bookData.isbn).replace(/[^0-9Xx]/g, '').toUpperCase() : null,
     name: String(bookData.name ?? '').trim(),
     author: bookData.author ? String(bookData.author).trim() : null,
     category: bookData.category ? String(bookData.category).trim() : null,
@@ -78,6 +79,7 @@ export function prepareBookStorageData(bookData: Partial<Book>) {
   normalized.category_key = normalizeBookText(normalized.category);
   normalized.search_terms = [...new Set([
     ...prefixes(String(normalized.book_number ?? '')),
+    ...prefixes(String(normalized.isbn ?? '')),
     ...prefixes(String(normalized.name ?? '')),
     ...prefixes(String(normalized.author ?? '')),
     ...prefixes(String(normalized.category ?? '')),
@@ -186,6 +188,58 @@ export async function createBook(bookData: Partial<Book>, customFields: { fieldI
     await saveCategory(prepared.category as string | null);
     return { error: null, id: bookId };
   } catch (error) { return { error: errorMessage(error), id: null }; }
+}
+
+export async function createScannedBook(bookData: Omit<Partial<Book>, 'book_number'>) {
+  try {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const settingsRef = documentRef('app_settings', 'main');
+      const settingsSnapshot = await getDoc(settingsRef);
+      if (!settingsSnapshot.exists()) throw new Error('Library settings were not found.');
+      const nextNumber = Math.max(1, Number(settingsSnapshot.data().next_book_number) || 1);
+      const bookNumber = String(nextNumber);
+
+      if (await checkBookNumberExists(bookNumber)) {
+        await trackCloudOperation(runTransaction(db, async (transaction) => {
+          const current = await transaction.get(settingsRef);
+          if ((Number(current.data()?.next_book_number) || 1) === nextNumber) {
+            transaction.update(settingsRef, { next_book_number: nextNumber + 1 });
+          }
+        }));
+        continue;
+      }
+
+      const bookRef = doc(collectionRef('books'));
+      const numberLockRef = documentRef('book_number_locks', encodeURIComponent(normalizeBookText(bookNumber)));
+      const prepared = prepareBookStorageData({ ...bookData, book_number: bookNumber });
+      let created = false;
+      try {
+        created = await trackCloudOperation(runTransaction(db, async (transaction) => {
+          const currentSettings = await transaction.get(settingsRef);
+          const currentNext = Math.max(1, Number(currentSettings.data()?.next_book_number) || 1);
+          if (currentNext !== nextNumber) throw new Error('BOOK_NUMBER_CHANGED');
+          const numberLock = await transaction.get(numberLockRef);
+          if (numberLock.exists()) {
+            transaction.update(settingsRef, { next_book_number: nextNumber + 1 });
+            return false;
+          }
+          transaction.set(bookRef, { ...prepared, archived: false, is_available: true, created_at: createdAt() });
+          transaction.set(numberLockRef, { book_id: bookRef.id, book_number: bookNumber, created_at: createdAt() });
+          transaction.update(settingsRef, { next_book_number: nextNumber + 1 });
+          return true;
+        }));
+      } catch (error) {
+        if (error instanceof Error && error.message === 'BOOK_NUMBER_CHANGED') continue;
+        throw error;
+      }
+      if (!created) continue;
+      await saveCategory(prepared.category as string | null);
+      return { error: null, id: bookRef.id, bookNumber };
+    }
+    return { error: 'Could not find an unused book number. Change the next number in Settings.', id: null, bookNumber: null };
+  } catch (error) {
+    return { error: errorMessage(error), id: null, bookNumber: null };
+  }
 }
 
 export async function updateBook(id: string, bookData: Partial<Book>, customFields: { fieldId: string; value: string }[]) {

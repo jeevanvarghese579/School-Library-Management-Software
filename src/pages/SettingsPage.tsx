@@ -444,6 +444,8 @@ function BookSettings({
 
   return (
     <div className="space-y-6">
+      <BarcodeAndApiSettings settings={settings} refreshSettings={refreshSettings} />
+
       <Card className="p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-2">Default Borrowing Period</h2>
         <p className="text-sm text-slate-500 mb-4">
@@ -545,6 +547,92 @@ function BookSettings({
         onCancel={() => { setShowDeleteConfirm(false); setDeleteTarget(null); }}
       />
     </div>
+  );
+}
+
+function BarcodeAndApiSettings({ settings, refreshSettings }: { settings: AppSettings | null; refreshSettings: () => Promise<void> }) {
+  const [nextBookNumber, setNextBookNumber] = useState(1);
+  const [googleEnabled, setGoogleEnabled] = useState(true);
+  const [googleApiKey, setGoogleApiKey] = useState('');
+  const [openLibraryEnabled, setOpenLibraryEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!settings) return;
+    setNextBookNumber(settings.next_book_number ?? 1);
+    setGoogleEnabled(settings.google_books_enabled !== false);
+    setGoogleApiKey(settings.google_books_api_key ?? '');
+    setOpenLibraryEnabled(settings.open_library_enabled !== false);
+  }, [settings]);
+
+  const handleSave = async () => {
+    if (!settings) return;
+    if (!Number.isInteger(nextBookNumber) || nextBookNumber < 1) {
+      toast.error('Next book number must be a whole number greater than zero.');
+      return;
+    }
+    if (!googleEnabled && !openLibraryEnabled) {
+      toast.error('Enable at least one book information provider.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateDocument('app_settings', settings.id, {
+        next_book_number: nextBookNumber,
+        google_books_enabled: googleEnabled,
+        google_books_api_key: googleApiKey.trim() || null,
+        open_library_enabled: openLibraryEnabled,
+      });
+      await refreshSettings();
+      toast.success('Barcode and book API settings saved');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Settings could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <h2 className="text-lg font-semibold text-slate-800 mb-2">Barcode Scanner & Book Information APIs</h2>
+      <p className="text-sm text-slate-500 mb-5">
+        Scanned books use the next book number, then increase it by one. Google Books can work without a key at a lower quota; Open Library does not require a key.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Input
+          label="Next Book Number"
+          type="number"
+          min="1"
+          step="1"
+          value={nextBookNumber}
+          onChange={(event) => setNextBookNumber(Number(event.target.value))}
+        />
+        <Input
+          label="Google Books API Key (optional)"
+          type="password"
+          autoComplete="off"
+          placeholder="AIza..."
+          value={googleApiKey}
+          onChange={(event) => setGoogleApiKey(event.target.value)}
+        />
+      </div>
+      <div className="mt-5 flex flex-col sm:flex-row gap-4 sm:gap-8">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={googleEnabled} onChange={(event) => setGoogleEnabled(event.target.checked)} className="h-4 w-4 rounded" />
+          Use Google Books API
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={openLibraryEnabled} onChange={(event) => setOpenLibraryEnabled(event.target.checked)} className="h-4 w-4 rounded" />
+          Use Open Library API as fallback
+        </label>
+      </div>
+      <p className="mt-4 text-xs text-slate-500">
+        Restrict a Google API key to the Books API and this website's domain in Google Cloud Console.
+      </p>
+      <Button className="mt-5" onClick={handleSave} disabled={saving || !settings}>
+        <Save size={16} /> {saving ? 'Saving...' : 'Save Scanner Settings'}
+      </Button>
+    </Card>
   );
 }
 

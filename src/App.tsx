@@ -13,6 +13,7 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import { BorrowerRankingsPage } from '@/pages/BorrowerRankingsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AboutPage } from '@/pages/AboutPage';
+import { BarcodeScannerPage } from '@/pages/BarcodeScannerPage';
 import { Toaster } from 'sonner';
 
 function ProtectedRoutes() {
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route element={<ProtectedRoutes />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/books" element={<BooksPage />} />
+        <Route path="/scan-books" element={<BarcodeScannerPage />} />
         <Route path="/students" element={<StudentsPage />} />
         <Route path="/classes" element={<ClassesPage />} />
         <Route path="/issue-return" element={<IssueReturnPage />} />

@@ -18,6 +18,7 @@ export interface Student {
 export interface Book {
   id: string;
   book_number: string;
+  isbn: string | null;
   name: string;
   author: string | null;
   category: string | null;
@@ -90,4 +91,8 @@ export interface AppSettings {
   date_format: string;
   borrowing_period_days: number;
   school_logo: string | null;
+  next_book_number: number;
+  google_books_enabled: boolean;
+  google_books_api_key: string | null;
+  open_library_enabled: boolean;
 }

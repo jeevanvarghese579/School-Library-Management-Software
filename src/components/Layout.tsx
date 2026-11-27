@@ -16,6 +16,7 @@ import {
   Cloud,
   CloudUpload,
   Trophy,
+  ScanBarcode,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -25,6 +26,7 @@ import { subscribeToCloudSync, waitForCloudSync } from '@/lib/cloudSync';
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/books', label: 'Books', icon: BookOpen },
+  { to: '/scan-books', label: 'Add Books by Barcode', icon: ScanBarcode },
   { to: '/issue-return', label: 'Issue / Return', icon: ArrowLeftRight },
   { to: '/students', label: 'Students', icon: Users },
   { to: '/classes', label: 'Classes', icon: GraduationCap },

@@ -61,6 +61,7 @@ export const createdAt = () => new Date().toISOString();
 
 const defaultFields = [
   ['default-book-number', 'Book Number', 'text', true],
+  ['default-isbn', 'ISBN', 'text', false],
   ['default-book-name', 'Name of Book', 'text', true],
   ['default-author-name', 'Author Name', 'text', false],
   ['default-category', 'Category', 'text', false],
@@ -82,9 +83,22 @@ export async function ensureUserDefaults() {
     batch.set(settingsRef, {
       school_name: 'School Library', currency: 'INR', currency_symbol: '₹',
       date_format: 'dd/MM/yyyy', borrowing_period_days: 14, school_logo: null,
+      next_book_number: 1, google_books_enabled: true, google_books_api_key: null,
+      open_library_enabled: true,
       created_at: createdAt(),
     });
     changed = true;
+  } else {
+    const current = snapshots[0].data();
+    const additions: Record<string, unknown> = {};
+    if (current.next_book_number === undefined) additions.next_book_number = 1;
+    if (current.google_books_enabled === undefined) additions.google_books_enabled = true;
+    if (current.google_books_api_key === undefined) additions.google_books_api_key = null;
+    if (current.open_library_enabled === undefined) additions.open_library_enabled = true;
+    if (Object.keys(additions).length > 0) {
+      batch.set(settingsRef, additions, { merge: true });
+      changed = true;
+    }
   }
   if (!snapshots[1].exists()) {
     batch.set(yearRef, {

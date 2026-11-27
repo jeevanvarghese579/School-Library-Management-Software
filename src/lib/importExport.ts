@@ -160,6 +160,8 @@ export async function importBooks(
       const rawValue = spreadsheetCellText(row[sheetCol]);
       if (appField === 'Book Number') {
         bookData.book_number = rawValue;
+      } else if (appField === 'ISBN') {
+        bookData.isbn = rawValue || null;
       } else if (appField === 'Name of Book') {
         bookData.name = rawValue;
       } else if (appField === 'Author Name') {
